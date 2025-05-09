@@ -1,4 +1,4 @@
-# IronThrone-ML: High-Throughput Single-Cell Genotyping Pipeline
+# IronThrone-ML: High-Throughput Single-Cell Genotyping and Denoising Pipeline
 
 **_IronThrone-ML_** is the analytical pipeline for **_GoT-Multi_ (Genotyping of Transcriptomes for Multiple Targets and Sample Types)**, a high-throughput and FFPE (formalin-fixed paraffin-embedded) tissue-compatible single-cell multi-omics method for simultaneous genotyping of multiple somatic mutations and whole transcriptomic profiling. 
 _IronThrone-ML_ extracts genotyping calls from genotyping sequence data and denoise the genotyping calls using machine learning to get the final genotyping profiles.
@@ -38,18 +38,23 @@ bash run_ironthrone_multi.sh
 - Output: `<ID>_Results/` with per-target genotyping results.
 
 ### 2. IronThrone-PP
-Prepare features for ML denoising:
+Prepare features data for ML denoising:
 ```bash
 bash run_ironthrone_pp.sh
 ```
-- Edit `run_ironthrone_pp.sh` to set mutation/barcode result directories, negative control cell group (if available), GEX file, and other options.
+- Edit `run_ironthrone_pp.sh` to set gene-sequence/barcode result directories, negative control cell group (if available), GEX object (.h5ad) path, and other options.
 - Input:
-  - Result directory paths of `Step1`
-  - Corresponding single-cell gene expression object (AnnData format), where metadata (`.obs`) must contain the following columns:
-      - cell type annotation (`cell-group`)
-      - experiment
+  - `--geneseq_dir`, `--barcode_dir`: Result directory paths of `Step1` (gene sequence & probe barcode)
+  - `--gex`: Corresponding single-cell gene expression object (AnnData format), where metadata (`.obs`) must contain the following columns:
+      - cell type annotation (`--cell-group`)
+      - negative controll cell group: _values in cell-group column where mutations are not expected to be observed_ (`--negative-control-cell-group`)
       - sample
-  - Target info csv table (`target-info`)
+      - `--additional-features`: column names ('comma-separated') in `target-info` csv file that can be used as features of the machine learning models
+  - `--target-info`: Target info csv table. This table must contain the following columns:
+      - `target`: mutation target
+      - `sample`: sample name they are expected  
+      <img src="assets/target_info_example.png" alt="Target Info Example" width="70%">
+  - `--outdir`: Output directory
 - Output: `2_ironthrone_pp/output/ironthrone_out_pp.csv`
 
 ### 3. IronThrone-Denoise
@@ -58,26 +63,30 @@ Run ML-based denoising:
 bash run_ironthrone_denoise.sh
 ```
 - Edit `run_ironthrone_denoise.sh` to set input features, output directory, and ML options.
+- Input:
+  - `--input-features`: Path to `ironthrone_out_pp.csv` from the previous step
+  - `--alpha`: Proportions between precision (`alpha`) and recall (`1-alpha`) to evaluate model performance and select the best model
 - Output: `3_ironthrone_denoise/output/aggregated/final_prediction_results_alpha_<alpha>.csv`
 
 ---
 ## What Does IronThrone-ML Denoising Do?
 - IronThrone-ML learns the data patterns of false positive mutant calls using machine learning.
-- It predicts which mutant calls are likely to be true (specific to expected cell populations) and which are likely to be false positives.
+- It predicts which mutant calls are likely to be false positives and which are likely to be true (specific to expected cell populations).
 - This increases the accuracy of mutation detection in your single-cell data.
 
 ---
 
 ## Directory Structure
 - `1_ironthrone_multi/` : IronThrone-Multi scripts and configs
-- `2_ironthrone_pp/`    : IronThrone-PP post-processing scripts
-- `3_ironthrone_denoise/` : IronThrone-Denoise ML scripts
-- `utils/`              : Shared utility code
+- `2_ironthrone_pp/`    : IronThrone-PP post-processing script (`process_ironthrone_output.py`)
+- `3_ironthrone_denoise/` : IronThrone-Denoise ML script (`ml_genotyping.py`)
+- `utils/`              : Utility code
 
 ---
 
 ## Requirements
 - Bash, Python 3, R, Perl, and required Python/R packages (see individual scripts for details)
+- `seqkit` needs to be installed and the command should be available in the terminal
 
 ---
 
