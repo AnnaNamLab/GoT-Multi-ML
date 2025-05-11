@@ -1,6 +1,6 @@
-# IronThrone-ML: High-Throughput Single-Cell Genotyping and Denoising Pipeline
+# GoT-Multi-ML: High-Throughput Single-Cell Genotyping and Denoising Pipeline
 
-**_IronThrone-ML_** is the analytical pipeline for **_GoT-Multi_ (Genotyping of Transcriptomes for Multiple Targets and Sample Types)**, a high-throughput and FFPE (formalin-fixed paraffin-embedded) tissue-compatible single-cell multi-omics method for simultaneous genotyping of multiple somatic mutations and whole transcriptomic profiling. 
+**_GoT-Multi-ML_** is the analytical pipeline for **_GoT-Multi_ (Genotyping of Transcriptomes for Multiple Targets and Sample Types)**, a high-throughput and FFPE (formalin-fixed paraffin-embedded) tissue-compatible single-cell multi-omics method for simultaneous genotyping of multiple somatic mutations and whole transcriptomic profiling. 
 _IronThrone-ML_ extracts genotyping calls from genotyping sequence data and denoise the genotyping calls using machine learning to get the final genotyping profiles.
 
 ## Pipeline Overview
@@ -49,7 +49,7 @@ bash run_ironthrone_pp.sh
       - cell type annotation (`--cell-group`)
       - negative controll cell group: _values in cell-group column where mutations are not expected to be observed_ (`--negative-control-cell-group`)
       - sample
-      - `--additional-features`: column names ('comma-separated') in `target-info` csv file that can be used as features of the machine learning models
+      - `--additional-features`: column names ('comma-separated') in `target-info` csv file that can be used as features of the machine learning models (e.g. vaf, gc_content_whole, gc_content_10bp)
   - `--target-info`: Target info csv table. This table must contain the following columns:
       - `target`: mutation target
       - `sample`: sample name they are expected  
