@@ -1,7 +1,7 @@
 # GoT-Multi-ML: High-Throughput Single-Cell Genotyping and Denoising Pipeline
 
 **_GoT-Multi-ML_** is the analytical pipeline for **_GoT-Multi_ (Genotyping of Transcriptomes for Multiple Targets and Sample Types)**, a high-throughput and FFPE (formalin-fixed paraffin-embedded) tissue-compatible single-cell multi-omics method for simultaneous genotyping of multiple somatic mutations and whole transcriptomic profiling. 
-_IronThrone-ML_ extracts genotyping calls from genotyping sequence data and denoise the genotyping calls using machine learning to get the final genotyping profiles.
+_GoT-Multi-ML-ML_ extracts genotyping calls from genotyping sequence data and denoise the genotyping calls using machine learning to get the final genotyping profiles.
 
 ## Pipeline Overview
 
