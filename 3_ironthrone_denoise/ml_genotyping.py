@@ -470,12 +470,13 @@ def main():
         "FalsePositive", "WT"
     )
     assert final_pred_df["BC"].isin(total_df["BC"]).all()
+    final_pred_df['gt'] = final_pred_df['Y'].copy()
     final_pred_df.loc[
         (final_pred_df["expected"] == 1)
         & (final_pred_df["Y"] == "MUT")
         & (final_pred_df["best_pred_adj"] != "MUT"),
-        "Y",
-    ] = "WT"
+        "gt",
+    ] = "FalsePositive"
     final_pred_df = final_pred_df[
         (final_pred_df["genotype_merged"].isin(["WT", "MUT"]))
         | (final_pred_df["best_pred_adj"] == "MUT")
