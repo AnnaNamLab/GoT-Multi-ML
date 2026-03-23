@@ -1,51 +1,156 @@
 #!/usr/bin/env python3
-"""
-Process IronThrone Output (Paired geneseq, probebc) and produce ironthrone_out_pp.csv
+"""Process paired IronThrone-Multi outputs and produce a merged genotype profile.
 
-This script processes IronThrone-classic output for paired mutation and barcode targets, merges with GEX data, and produces a unified CSV for IronThrone-ML.
+This step merges the GeneSeq and ProbeBC IronThrone results target-by-target,
+creates genotype_geneseq, genotype_probebc, and genotype_merged, and writes the
+combined GoT-Multi paired genotype profile to ironthrone_out_pp.csv.
 
-Arguments:
-    --mutdir: Directory containing mutation (geneseq) IronThrone results
-    --bardir: Directory containing barcode (probebc) IronThrone results
-    --cell-group: Column name in GEX data for cell group
-    --negative-control-cell-group: Comma-separated list of negative control cell groups
-    --gex: Path to GEX .h5ad file
-    --target-info: Path to target info CSV
-    --outdir: Output directory
-    --additional-features: Comma-separated list of additional features to add from target info (optional)
-
-Output:
-    ironthrone_out_pp.csv in the output directory
+This stage is intentionally GEX-free. GEX metadata and ML labels are added later
+by the optional ML preparation / denoising stage.
 """
 
-import os
+from __future__ import annotations
+
 import argparse
-import pandas as pd
-import numpy as np
-import scanpy as sc
+import glob
+import math
+import os
 import sys
 
+import matplotlib.pyplot as plt
+import pandas as pd
+
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-from ironthrone_ml.pp import paired_pp_ironthrone_result
-from ironthrone_ml import createFolder
+from utils.pp import paired_pp_ironthrone_result
+from utils import createFolder
 
 
-def get_matching_dirs(dir_path, pattern="*.summTable.concat.umi_collapsed.txt"):
-    import glob
+READ_STAT_COLUMNS = [
+    "wt_reads_per_umi_avg_geneseq",
+    "wt_reads_per_umi_med_geneseq",
+    "wt_reads_per_umi_std_geneseq",
+    "wt_reads_per_umi_total_geneseq",
+    "wt_reads_per_umi_count_geneseq",
+    "wt_reads_per_umi_avg_probebc",
+    "wt_reads_per_umi_med_probebc",
+    "wt_reads_per_umi_std_probebc",
+    "wt_reads_per_umi_total_probebc",
+    "wt_reads_per_umi_count_probebc",
+    "mut_reads_per_umi_avg_geneseq",
+    "mut_reads_per_umi_med_geneseq",
+    "mut_reads_per_umi_std_geneseq",
+    "mut_reads_per_umi_total_geneseq",
+    "mut_reads_per_umi_count_geneseq",
+    "mut_reads_per_umi_avg_probebc",
+    "mut_reads_per_umi_med_probebc",
+    "mut_reads_per_umi_std_probebc",
+    "mut_reads_per_umi_total_probebc",
+    "mut_reads_per_umi_count_probebc",
+    "amb_reads_per_umi_avg_geneseq",
+    "amb_reads_per_umi_med_geneseq",
+    "amb_reads_per_umi_std_geneseq",
+    "amb_reads_per_umi_total_geneseq",
+    "amb_reads_per_umi_count_geneseq",
+    "amb_reads_per_umi_avg_probebc",
+    "amb_reads_per_umi_med_probebc",
+    "amb_reads_per_umi_std_probebc",
+    "amb_reads_per_umi_total_probebc",
+    "amb_reads_per_umi_count_probebc",
+]
 
-    matching_dirs = []
+CALL_COLUMNS = [
+    "wt_calls_geneseq",
+    "mut_calls_geneseq",
+    "amb_calls_geneseq",
+    "wt_calls_probebc",
+    "mut_calls_probebc",
+    "amb_calls_probebc",
+]
+
+GENOTYPE_COLUMNS = [
+    "genotype_geneseq",
+    "genotype_probebc",
+    "genotype_merged",
+]
+
+UNIFIED_COLUMNS = ["BC", "target"] + READ_STAT_COLUMNS + CALL_COLUMNS + GENOTYPE_COLUMNS
+
+
+def get_matching_dirs(dir_path: str, pattern: str = "*.summTable.concat.umi_collapsed.txt") -> list[str]:
+    matching_dirs: list[str] = []
     for item in os.listdir(dir_path):
-        if item != "processed_input":
-            full_path = os.path.join(dir_path, item)
-            if os.path.isdir(full_path):
-                if glob.glob(os.path.join(full_path, pattern)):
-                    matching_dirs.append(item)
+        if item == "processed_input":
+            continue
+        full_path = os.path.join(dir_path, item)
+        if os.path.isdir(full_path) and glob.glob(os.path.join(full_path, pattern)):
+            matching_dirs.append(item)
     return matching_dirs
 
 
-def main():
+def write_stage1_genotype_count_plot(gen_df: pd.DataFrame, outdir: str) -> str:
+    genotype_order = ["WT", "MUT", "Ambiguous", "Unprofiled"]
+    palette = {
+        "WT": "#8ecae6",
+        "MUT": "#023e8a",
+        "Ambiguous": "#bdbdbd",
+        "Unprofiled": "#e0e0e0",
+    }
+
+    targets = gen_df["target"].dropna().unique().tolist()
+    n_targets = len(targets)
+    n_cols = 2 if n_targets > 1 else 1
+    n_rows = math.ceil(n_targets / n_cols)
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=(n_cols * 4.0, n_rows * 3.4))
+    try:
+        axes = axes.flatten()
+    except AttributeError:
+        axes = [axes]
+
+    for i, target in enumerate(targets):
+        ax = axes[i]
+        target_df = gen_df[gen_df["target"] == target].copy()
+        counts = target_df["genotype_merged"].value_counts()
+        x_values = genotype_order
+        y_values = [int(counts.get(g, 0)) for g in x_values]
+        colors = [palette[g] for g in x_values]
+
+        bars = ax.bar(x_values, y_values, color=colors, edgecolor="0.2", linewidth=0.8)
+        ax.set_title(target, fontsize=9, weight="bold")
+        ax.set_xlabel("genotype_merged", fontsize=8)
+        ax.set_ylabel("cell count", fontsize=8)
+        ax.tick_params(axis="x", labelrotation=30, labelsize=8)
+        ax.tick_params(axis="y", labelsize=8)
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+
+        ymax = max(y_values) if y_values else 0
+        ax.set_ylim(0, ymax * 1.18 + 1)
+        for bar, value in zip(bars, y_values):
+            ax.text(
+                bar.get_x() + bar.get_width() / 2,
+                bar.get_height() + max(ymax * 0.02, 0.3),
+                str(value),
+                ha="center",
+                va="bottom",
+                fontsize=8,
+                weight="bold",
+                color="0.2",
+            )
+
+    for ax in axes[n_targets:]:
+        ax.axis("off")
+
+    fig.tight_layout()
+    output_path = os.path.join(outdir, "initial_genotype_counts_by_target.pdf")
+    fig.savefig(output_path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    print(f"Stage-1 genotype count plot written to {output_path}")
+    return output_path
+
+
+def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Process IronThrone output and produce ironthrone_out_pp.csv"
+        description="Merge paired GeneSeq and ProbeBC IronThrone outputs into ironthrone_out_pp.csv"
     )
     parser.add_argument(
         "--mutdir",
@@ -59,49 +164,17 @@ def main():
         required=True,
         help="Directory with barcode (probebc) IronThrone results",
     )
-    parser.add_argument(
-        "--cell-group", type=str, required=True, help="Cell group column in GEX data"
-    )
-    parser.add_argument(
-        "--negative-control-cell-group",
-        type=str,
-        default="",
-        help="Comma-separated list of negative control cell groups",
-    )
-    parser.add_argument("--gex", type=str, required=True, help="Path to GEX .h5ad file")
-    parser.add_argument(
-        "--target-info", type=str, required=True, help="Path to target info CSV"
-    )
     parser.add_argument("--outdir", type=str, required=True, help="Output directory")
-    parser.add_argument(
-        "--additional-features",
-        type=str,
-        default="",
-        help="Comma-separated list of additional features (optional)",
-    )
     args = parser.parse_args()
 
     createFolder(args.outdir)
-    negative_control_cell_group = [
-        x for x in args.negative_control_cell_group.split(",") if x
-    ]
-    additional_features = [x for x in args.additional_features.split(",") if x]
 
-    gex = sc.read_h5ad(args.gex)
-    gex.obs["is_non_mut"] = gex.obs[args.cell_group].apply(
-        lambda x: True if x in negative_control_cell_group else False
-    )
-    gex_df = gex.obs[
-        ["BC", "experiment", "sample", "is_non_mut", args.cell_group]
-    ].copy()
-
-    mut_targets = get_matching_dirs(args.mutdir)
-    bar_targets = get_matching_dirs(args.bardir)
-    targets_of_interest = list(set(bar_targets) & set(mut_targets))
+    mut_targets = set(get_matching_dirs(args.mutdir))
+    bar_targets = set(get_matching_dirs(args.bardir))
+    targets_of_interest = sorted(mut_targets & bar_targets)
     print(f"Targets of interest: {targets_of_interest}")
 
-    probe_info = pd.read_csv(args.target_info)
-    gen_df = []
+    merged_frames: list[pd.DataFrame] = []
     for target in targets_of_interest:
         gen = paired_pp_ironthrone_result(
             geneseq_dir=args.mutdir,
@@ -112,116 +185,34 @@ def main():
         if gen is None:
             print(f"Skipping {target} due to missing data.")
             continue
-        target_gen_df = pd.merge(gex_df, gen, on="BC", how="inner")
-        assert target_gen_df["BC"].nunique() == target_gen_df.shape[0]
-        target_gen_df.set_index("BC", inplace=True)
-        target_gen_df["expected_sample"] = probe_info.query(f'target == "{target}"')[
-            "sample"
-        ].values[0]
-        gen_df.append(target_gen_df)
-    if not gen_df:
-        print("No valid targets found.")
-        return
-    gen_df = pd.concat(gen_df).reset_index()
-    targets = gen_df.sort_values("expected_sample")["target"].unique()
-    print("#Targets:", len(targets))
-    gen_df["in_expected_sample"] = (
-        gen_df["sample"] == gen_df["expected_sample"]
-    ).astype(int)
-    gen_df["Y"] = 1
-    gen_df.loc[
-        (gen_df["in_expected_sample"] == 1)
-        & (gen_df["genotype_merged"] == "MUT")
-        & (gen_df["is_non_mut"] == False),
-        "Y",
-    ] = 2
-    gen_df.loc[
-        (gen_df["in_expected_sample"] == 0) & (gen_df["genotype_merged"] == "MUT"), "Y"
-    ] = 0
-    gen_df.loc[
-        (gen_df["genotype_merged"] == "MUT") & (gen_df["is_non_mut"] == True), "Y"
-    ] = 0
-    gen_df.loc[(gen_df["genotype_merged"] != "MUT"), "Y"] = 1
-    int2label = {0: "FalsePositive", 1: "WT", 2: "MUT"}
-    gen_df["Y_num"] = gen_df["Y"].copy()
-    gen_df["Y"] = gen_df["Y"].map(int2label)
-    if "is_non_mut" in gen_df.columns:
-        gen_df["expected"] = (
-            (gen_df["sample"] == gen_df["expected_sample"]) & (~gen_df["is_non_mut"])
-        ).astype(int)
-    else:
-        gen_df["expected"] = (gen_df["sample"] == gen_df["expected_sample"]).astype(int)
-    if additional_features:
-        for feature in additional_features:
-            if feature not in probe_info.columns:
-                print(f"Feature {feature} not found in probe_info.")
-                continue
-            target2feature = (
-                probe_info[["target", feature]]
-                .drop_duplicates()
-                .set_index("target")
-                .to_dict()[feature]
+
+        missing_columns = [column for column in UNIFIED_COLUMNS if column not in gen.columns]
+        if missing_columns:
+            raise ValueError(f"Target {target} is missing required columns: {missing_columns}")
+
+        target_gen_df = gen[UNIFIED_COLUMNS].copy()
+        if target_gen_df["BC"].duplicated().any():
+            duplicated_bc = target_gen_df.loc[target_gen_df["BC"].duplicated(), "BC"].unique()[:5]
+            raise ValueError(
+                f"Target {target} does not have unique BC rows after paired post-processing. "
+                f"Example duplicated BCs: {duplicated_bc.tolist()}"
             )
-            if probe_info["target"].nunique() != len(target2feature):
-                print(
-                    f"Feature {feature} has duplicate values for targets. Skipping..."
-                )
-                continue
-            gen_df[feature] = gen_df["target"].map(target2feature)
-    unified_columns = [
-        "BC",
-        "target",
-        "sample",
-        "expected_sample",
-        "expected",
-        "experiment",
-        "is_non_mut",
-        "wt_reads_per_umi_avg_geneseq",
-        "wt_reads_per_umi_med_geneseq",
-        "wt_reads_per_umi_std_geneseq",
-        "wt_reads_per_umi_total_geneseq",
-        "wt_reads_per_umi_count_geneseq",
-        "wt_reads_per_umi_avg_probebc",
-        "wt_reads_per_umi_med_probebc",
-        "wt_reads_per_umi_std_probebc",
-        "wt_reads_per_umi_total_probebc",
-        "wt_reads_per_umi_count_probebc",
-        "mut_reads_per_umi_avg_geneseq",
-        "mut_reads_per_umi_med_geneseq",
-        "mut_reads_per_umi_std_geneseq",
-        "mut_reads_per_umi_total_geneseq",
-        "mut_reads_per_umi_count_geneseq",
-        "mut_reads_per_umi_avg_probebc",
-        "mut_reads_per_umi_med_probebc",
-        "mut_reads_per_umi_std_probebc",
-        "mut_reads_per_umi_total_probebc",
-        "mut_reads_per_umi_count_probebc",
-        "amb_reads_per_umi_avg_geneseq",
-        "amb_reads_per_umi_med_geneseq",
-        "amb_reads_per_umi_std_geneseq",
-        "amb_reads_per_umi_total_geneseq",
-        "amb_reads_per_umi_count_geneseq",
-        "amb_reads_per_umi_avg_probebc",
-        "amb_reads_per_umi_med_probebc",
-        "amb_reads_per_umi_std_probebc",
-        "amb_reads_per_umi_total_probebc",
-        "amb_reads_per_umi_count_probebc",
-        "wt_calls_geneseq",
-        "mut_calls_geneseq",
-        "amb_calls_geneseq",
-        "wt_calls_probebc",
-        "mut_calls_probebc",
-        "amb_calls_probebc",
-        "genotype_merged",
-        "Y",
-        "Y_num",
-    ]
-    unified_columns += additional_features
-    assert gen_df[unified_columns].isna().sum().sum() == 0
-    gen_df = gen_df[unified_columns]
-    gen_df.to_csv(os.path.join(args.outdir, "ironthrone_out_pp.csv"), index=False)
-    print(f"Output written to {os.path.join(args.outdir, 'ironthrone_out_pp.csv')}")
+        merged_frames.append(target_gen_df)
+
+    if not merged_frames:
+        print("No valid targets found.")
+        return 0
+
+    gen_df = pd.concat(merged_frames, ignore_index=True)
+    gen_df = gen_df.sort_values(["target", "BC"]).reset_index(drop=True)
+
+    output_path = os.path.join(args.outdir, "ironthrone_out_pp.csv")
+    gen_df.to_csv(output_path, index=False)
+    print(f"Output written to {output_path}")
+
+    write_stage1_genotype_count_plot(gen_df, args.outdir)
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
