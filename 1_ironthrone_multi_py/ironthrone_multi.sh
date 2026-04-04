@@ -270,8 +270,8 @@ if [ "$SKIP_INPUT_PREP" = false ]; then
     bash ${IRONTHRONE_DIR}/IronThrone_input_preparation.sh \
         --fastq-r1 $OUTDIR/processed_input/${ID}_R1${R1_EXT} \
         --fastq-r2 $OUTDIR/processed_input/${ID}_R2${R2_EXT} \
-        --prefix $PREFIX \
-        --suffix $SUFFIX \
+        --prefix "$PREFIX" \
+        --suffix "$SUFFIX" \
         -o $OUTDIR/processed_input \
         --n_subset ${ironthrone_args[n_subset]:-10} \
         -j $JOBS \
